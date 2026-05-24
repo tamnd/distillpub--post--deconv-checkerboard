@@ -1,0 +1,1061 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" type="text/css" href="assets/w_page.css">
+<script src="assets/template.v1.js"></script>
+<script src="assets/d3.min.js"></script>
+<script src="assets/d3-path.min.js"></script>
+<script src="assets/underscore.js"></script>
+<script src="assets/vis_functions.js"></script>
+
+<script type="text/front-matter">
+  title: Deconvolution và Hiện Tượng Checkerboard
+  description: Khi nhìn thật kỹ các ảnh do mạng nơ-ron sinh ra, ta thường thấy các artefact dạng bàn cờ kỳ lạ.
+  authors:
+  - Augustus Odena
+  - Vincent Dumoulin: http://vdumoulin.github.io/
+  - Chris Olah: http://colah.github.io
+  affiliations:
+  - Google Brain: http://g.co/brain
+  - Université de Montréal: https://mila.umontreal.ca/en/
+  - Google Brain: http://g.co/brain
+</script>
+
+<dt-article class="centered">
+  <h1>Deconvolution và Hiện Tượng Checkerboard</h1>
+
+  <dt-byline></dt-byline>
+
+  <p>Khi nhìn thật kỹ các ảnh do mạng nơ-ron sinh ra, ta thường thấy một mẫu artefact dạng bàn cờ kỳ lạ. Nó rõ hơn trong một số trường hợp so với những trường hợp khác, nhưng phần lớn các mô hình gần đây đều biểu hiện hành vi này.</p>
+
+  <dt-include src="assets/samples.html" class="l-middle"><style>
+.pattern-examples {
+  width: 100%;
+}
+.pattern-examples > figure {
+  display: -ms-flexbox;
+  display: -webkit-flex;
+  display: flex;
+  position: relative;
+}
+
+.pattern-examples > figure:after {
+  overflow: visible;
+  content: "";
+  background-image: url("assets/pointer.svg");
+  width: 27px;
+  height: 27px;
+  position: absolute;
+  right: -51px;
+}
+
+.pattern-examples .example {
+  width: 100%;
+  margin-right: 2.5%;
+}
+
+.pattern-examples .example:last-of-type {
+  margin-right: 0;
+}
+
+.pattern-examples .original {
+  position: relative;
+}
+
+.pattern-examples .original:after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 150%;
+  position: absolute;
+  top: -20%;
+  z-index: 1;
+}
+
+.pattern-examples .example .reticle {
+  position: absolute;
+  pointer-events: none;
+}
+
+.pattern-examples .example .reticle:after {
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  left: -50%;
+  top: -50%;
+  border-radius: 50%;
+  border: 1px solid white;
+  display: block;
+  content: '';
+  background-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.pattern-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+.pattern-examples .closeup {
+  display: block;
+  width: 90%;
+  border-radius: 50%;
+  margin-bottom: 12px;
+  position: relative;
+  left: 5%;
+  top: -5px;
+  border: 2px solid white;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.pattern-examples figcaption {
+  width: 90%;
+  margin-left: 5%;
+  text-align: center;
+}
+
+.pattern-examples .closeup img {
+  position: absolute;
+  width: 800%;
+}
+
+.pattern-examples .closeup:after {
+  padding-top: 100%;
+  display: block;
+  content: '';
+}
+
+</style>
+
+<div class="pattern-examples">
+  <figure class="">
+    <div class="example">
+      <div class="original" data-focus="5,0.87,0.24">
+        <img src="assets/im_sample_dcgan.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/im_sample_dcgan_contrast.png">
+      </div>
+      <figcaption>
+        <dt-cite key="radford2015unsupervised">Radford, et al., 2015</dt-cite>
+      </figcaption>
+    </div>
+    <div class="example">
+      <div class="original" data-focus="10,0.05,0.84">
+        <img src="assets/im_sample_salimans.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/im_sample_salimans.png">
+      </div>
+      <figcaption>
+        <dt-cite key="salimans2016improved">Salimans et al., 2016</dt-cite>
+      </figcaption>
+    </div>
+    <div class="example">
+      <div class="original" data-focus="5,0.70,0.28">
+        <img src="assets/im_sample_donahue.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/im_sample_donahue.png">
+      </div>
+      <figcaption>
+        <dt-cite key="donahue2016adversarial">Donahue, et al., 2016</dt-cite>
+      </figcaption>
+    </div>
+    <div class="example">
+      <div class="original" data-focus="5,0.87,0.53">
+        <img src="assets/im_sample_dumoulin.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/im_sample_dumoulin.png">
+      </div>
+      <figcaption>
+        <dt-cite key="dumoulin2016adversarially">Dumoulin, et al., 2016</dt-cite>
+        <!--<b><i>Using our method.</i></b>-->
+      </figcaption>
+    </div>
+  </figure>
+</div>
+
+<script>(function() {
+
+var html = d3.select(".pattern-examples");
+var original = html.selectAll(".example .original");
+html
+    .on("mouseleave", () => {
+      console.log("out")
+      original.each(resetReticle);
+    });
+
+original
+    .datum(function() {
+      var focus = this.getAttribute("data-focus").split(",")
+      return {
+        zoom: focus[0],
+        x: focus[1],
+        y: focus[2]
+      };
+    })
+    .on("mouseleave", resetReticle)
+    .on("mousemove", updateReticle)
+    .each(resetReticle);
+
+function updateReticle(d) {
+
+  original.each(resetReticle);
+  var x = d3.event.offsetX / this.getBoundingClientRect().width;
+  var y = d3.event.offsetY / this.getBoundingClientRect().height;
+  setPosition(this, x, y, d.zoom, 100);
+}
+
+function resetReticle(d) {
+  setPosition(this, d.x, d.y, d.zoom, 300);
+}
+
+function setPosition(element, x, y, zoom, duration) {
+  var margin = 1 / zoom / 2;
+  x = Math.min(Math.max(margin, x), 1 - margin)
+  y = Math.min(Math.max(margin, y), 1 - margin)
+  var parent = d3.select(element.parentElement);
+  var reticle = parent.select(".reticle");
+  var closeup = parent.select(".closeup img");
+
+  console.log(x, y)
+
+  reticle
+      .style("width", 100 / zoom + "%")
+      .style("height", 100 / zoom + "%")
+      .transition()
+      .ease(d3.ease("cubic-out"))
+      .duration(duration)
+      .styleTween("left", function (d, i, a) {
+        var from = this.style.left,
+            to = x * 100 + "%";
+        return d3.interpolateString(from, to);
+      })
+      .styleTween("top", function (d, i, a) {
+        var from = this.style.top,
+            to = y * 100 + "%";
+        return d3.interpolateString(from, to);
+      })
+
+  closeup
+      .style("width", zoom * 100 + "%")
+      .style("height", zoom * 100 + "%")
+      .transition()
+      .ease(d3.ease("cubic-out"))
+      .duration(duration)
+      .styleTween("left", function (d, i, a) {
+        var from = this.style.left,
+            to = -x * 100 * zoom + 50 + "%";
+        return d3.interpolateString(from, to);
+      })
+      .styleTween("top", function (d, i, a) {
+        var from = this.style.top,
+            to = -y * 100 * zoom + 50 + "%";
+        return d3.interpolateString(from, to);
+      })
+}
+
+
+})();</script>
+</dt-include>
+
+  <p>Một cách khó hiểu, mẫu bàn cờ này thường nổi bật nhất trong các ảnh có màu sắc mạnh. Chuyện gì đang xảy ra? Mạng nơ-ron ghét màu sáng sao? Nguyên nhân thật sự của các artefact này hóa ra rất đơn giản, và cách tránh chúng cũng vậy.</p>
+
+  <hr>
+
+  <h2>Deconvolution và sự chồng lấn</h2>
+
+  <p>Khi ta để mạng nơ-ron sinh ảnh, ta thường cho chúng xây ảnh dần lên từ các mô tả mức cao, độ phân giải thấp. Điều này cho phép mạng mô tả hình ảnh thô rồi sau đó điền các chi tiết.</p>
+
+  <p>Để làm vậy, ta cần một cách đi từ ảnh độ phân giải thấp lên ảnh độ phân giải cao hơn. Thông thường ta dùng phép <em>deconvolution</em>. Nói đại khái, các lớp deconvolution cho phép mô hình dùng từng điểm trong ảnh nhỏ để "vẽ" một ô vuông trong ảnh lớn hơn.</p>
+
+  <p>Deconvolution có nhiều cách diễn giải và nhiều tên gọi khác nhau, bao gồm "transposed convolution". Trong bài này, chúng tôi dùng tên "deconvolution" cho ngắn gọn. Để đọc một thảo luận xuất sắc về deconvolution, xem <dt-cite key="dumoulin2016guide,shi2016deconvolution"></dt-cite>.</p>
+
+  <p>Đáng tiếc, deconvolution rất dễ tạo ra "chồng lấn không đều", tức đặt nhiều "sơn" ẩn dụ hơn ở một số vị trí so với những vị trí khác <dt-cite key="gauthier2014conditional"></dt-cite>. Cụ thể, deconvolution có chồng lấn không đều khi kích thước kernel, tức kích thước cửa sổ đầu ra, không chia hết cho stride, tức khoảng cách giữa các điểm ở phía trên. Về nguyên tắc, mạng có thể học trọng số thật cẩn thận để tránh điều này, như ta sẽ bàn kỹ hơn sau, nhưng trong thực tế mạng nơ-ron khó tránh hoàn toàn.</p>
+
+  <dt-include src="assets/deconv1d.html"><figure id="deconv1d" class="w-screen">
+</figure>
+
+<script>
+deconv1d();
+</script>
+</dt-include>
+
+  <p>Mẫu chồng lấn cũng hình thành trong hai chiều. Các chồng lấn không đều trên hai trục nhân với nhau, tạo ra mẫu cường độ thay đổi giống bàn cờ.</p>
+
+  <dt-include src="assets/deconv2d.html"><figure id="deconv2d" class="w-page">
+</figure>
+
+<script>
+deconv2d();
+</script>
+</dt-include>
+
+  <p>Thực ra, chồng lấn không đều thường còn cực đoan hơn trong hai chiều. Vì hai mẫu được nhân với nhau, độ không đều bị bình phương. Ví dụ, trong một chiều, deconvolution stride 2, size 3 có một số đầu ra nhận số đầu vào gấp đôi các đầu ra khác; nhưng trong hai chiều, điều này trở thành hệ số bốn.</p>
+
+  <p>Giờ đây, mạng nơ-ron thường dùng nhiều lớp deconvolution khi tạo ảnh, lặp đi lặp lại việc xây ảnh lớn hơn từ một chuỗi mô tả độ phân giải thấp. Dù về lý thuyết các deconvolution xếp chồng có thể triệt tiêu artefact của nhau, chúng thường cộng hưởng và tạo artefact ở nhiều thang đo.</p>
+
+  <dt-include src="assets/deconv1d_multi.html"><figure id="deconv1d_multi" class="w-screen">
+</figure>
+
+<script>
+deconv1d_multi();
+</script>
+</dt-include>
+
+  <p>Deconvolution stride 1, thứ ta thường thấy như lớp cuối trong các mô hình thành công, khá hiệu quả trong việc làm dịu artefact. Chúng có thể loại bỏ các artefact có tần số chia hết cho kích thước của chúng, và giảm các artefact khác có tần số nhỏ hơn kích thước đó. Tuy nhiên, artefact vẫn có thể lọt qua, như đã thấy trong nhiều mô hình gần đây.</p>
+
+  <p>Ngoài các artefact tần số cao dạng bàn cờ mà ta quan sát ở trên, các deconvolution sớm có thể tạo artefact tần số thấp hơn; ta sẽ khám phá điều này kỹ hơn ở phần sau.</p>
+
+  <p>Các artefact này thường nổi bật nhất khi mô hình xuất ra các màu bất thường. Vì các lớp mạng nơ-ron thường có bias, tức một giá trị học được cộng vào đầu ra, việc xuất ra màu trung bình là dễ. Một màu càng xa màu trung bình, chẳng hạn đỏ sáng, deconvolution càng phải đóng góp nhiều hơn.</p>
+
+  <hr>
+
+  <h2>Chồng lấn và học</h2>
+
+  <p>Suy nghĩ theo chồng lấn không đều là một khung nhìn hữu ích, nhưng cũng hơi đơn giản. Dù tốt hay xấu, các mô hình của ta học trọng số cho deconvolution.</p>
+
+  <p>Về lý thuyết, mô hình có thể học cách ghi thật cẩn thận vào các vị trí chồng lấn không đều để đầu ra được cân bằng.</p>
+
+  <figure class="l-page">
+    <img src="assets/upsample_LearnedConvUneven.svg">
+  </figure>
+
+  <p>Đây là một bài toán cân bằng khó, đặc biệt khi có nhiều kênh tương tác. Tránh artefact giới hạn đáng kể các bộ lọc có thể có, làm hy sinh năng lực mô hình. Trong thực tế, mạng nơ-ron khó học cách tránh hoàn toàn các mẫu này.</p>
+
+  <p>Thực ra, không chỉ các mô hình có chồng lấn không đều không học được cách tránh điều này; ngay cả các mô hình có chồng lấn đều cũng thường học kernel gây ra artefact tương tự. Dù đó không phải hành vi mặc định như trong trường hợp chồng lấn không đều, deconvolution chồng lấn đều vẫn rất dễ tạo artefact.</p>
+
+  <figure class="l-page">
+    <img src="assets/upsample_LearnedConvEven.svg">
+  </figure>
+
+  <p>Tránh artefact hoàn toàn vẫn là một ràng buộc đáng kể lên bộ lọc, và trong thực tế artefact vẫn xuất hiện trong các mô hình này, dù có vẻ nhẹ hơn. Xem <dt-cite key="dumoulin2016adversarially"></dt-cite>, dùng deconvolution stride 2 size 4, như một ví dụ.</p>
+
+  <p>Có lẽ có nhiều yếu tố cùng tác động. Ví dụ, trong Generative Adversarial Networks (GAN), một vấn đề có thể nằm ở discriminator và gradient của nó, điều ta sẽ bàn sau. Nhưng phần lớn vấn đề dường như nằm ở deconvolution. Ở mức tốt nhất, deconvolution mong manh vì nó rất dễ biểu diễn các hàm tạo artefact, ngay cả khi kích thước được chọn cẩn thận. Ở mức tệ nhất, tạo artefact là hành vi mặc định của deconvolution.</p>
+
+  <p>Có cách upsample nào khác chống artefact tốt hơn không?</p>
+
+  <hr>
+
+  <h2>Upsampling tốt hơn</h2>
+
+  <p>Để tránh các artefact này, ta muốn một lựa chọn thay thế cho deconvolution thông thường, tức "transposed convolution". Khác với deconvolution, cách upsampling này không nên mặc định tạo artefact. Lý tưởng hơn, nó nên có thiên hướng chống lại các artefact đó.</p>
+
+  <p>Một cách là bảo đảm bạn dùng kích thước kernel chia hết cho stride, tránh vấn đề chồng lấn. Điều này tương đương với "sub-pixel convolution", một kỹ thuật gần đây thành công trong siêu phân giải ảnh <dt-cite key="shi2016real"></dt-cite>. Tuy nhiên, dù cách này hữu ích, deconvolution vẫn dễ rơi vào việc tạo artefact.</p>
+
+  <p>Một cách khác là tách upsampling lên độ phân giải cao hơn khỏi convolution dùng để tính đặc trưng. Ví dụ, bạn có thể resize ảnh bằng <a href="https://en.wikipedia.org/wiki/Nearest-neighbor_interpolation">nội suy nearest-neighbor</a> hoặc <a href="https://en.wikipedia.org/wiki/Bilinear_interpolation">nội suy bilinear</a>, rồi sau đó dùng một lớp convolution. Đây có vẻ là cách tự nhiên, và các phương pháp gần tương tự đã hoạt động tốt trong siêu phân giải ảnh, chẳng hạn <dt-cite key="dong2014image"></dt-cite>.</p>
+
+  <figure class="l-page">
+    <img src="assets/upsample_DeconvTypes.svg">
+  </figure>
+
+  <p>Cả deconvolution lẫn các cách resize-convolution đều là phép toán tuyến tính, và có thể diễn giải như ma trận. Đây là một cách hữu ích để thấy sự khác nhau giữa chúng. Trong khi deconvolution có một entry riêng cho mỗi cửa sổ đầu ra, resize-convolution ngầm buộc chia sẻ trọng số theo cách làm nản lòng artefact tần số cao.</p>
+
+  <p>Chúng tôi đạt kết quả tốt nhất với nội suy nearest-neighbor, và gặp khó khăn khi làm bilinear resize hoạt động tốt. Điều này có thể đơn giản là, với mô hình của chúng tôi, nearest-neighbor tình cờ phù hợp với các siêu tham số đã tối ưu cho deconvolution. Nó cũng có thể chỉ ra các vấn đề khó hơn khi dùng bilinear interpolation một cách ngây thơ, vì nó chống lại đặc trưng ảnh tần số cao quá mạnh. Chúng tôi không nhất thiết nghĩ một trong hai cách là lời giải cuối cùng cho upsampling, nhưng chúng thật sự sửa được artefact bàn cờ.</p>
+
+  <h3>Mã nguồn</h3>
+
+  <p>Các lớp resize-convolution có thể được triển khai dễ dàng trong TensorFlow bằng <code>tf.image.resize_images()</code>. Để có kết quả tốt nhất, dùng <code>tf.pad()</code> trước khi convolution với <code>tf.nn.conv2d()</code> để tránh artefact ở biên.</p>
+
+  <hr>
+
+  <h2>Kết quả sinh ảnh</h2>
+
+  <p>Kinh nghiệm của chúng tôi là nearest-neighbor resize theo sau bởi convolution hoạt động rất tốt trong nhiều bối cảnh.</p>
+
+  <p>Một trường hợp mà chúng tôi thấy cách này hữu ích là Generative Adversarial Networks. Chỉ cần thay các lớp deconvolution tiêu chuẩn bằng nearest-neighbor resize rồi convolution, các artefact ở nhiều tần số khác nhau biến mất.</p>
+
+  <dt-include src="assets/deconv_fixes.html"><style>
+
+.fix-examples > .row {
+  display: -ms-flexbox;
+  display: -webkit-flex;
+  display: flex;
+  /*align-items: center;*/
+  margin-bottom: 10px;
+}
+
+.fix-examples > .row > .example {
+  flex-grow: 1;
+  width: 100%;
+  margin-right: 10px;
+}
+
+.fix-examples > .row > .explanation {
+  flex-grow: 2;
+  width: 200%;
+  margin-left: 10px;
+}
+
+.fix-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+</style>
+
+<figure class="fix-examples l-body-outset">
+  <div class="row">
+    <div class="example">
+      <img src="assets/fix_two_deconv_boat.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_two_deconv_deer.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_two_deconv_prototype_plane.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_two_deconv_bird.png">
+    </div>
+    <div class="explanation">
+      <figcaption>
+        Deconv in last two layers.<br> Other layers use resize-convolution.<br><i>Artifacts of frequency 2 and 4.</i>
+      </figcaption>
+    </div>
+  </div>
+  <div class="row">
+    <div class="example">
+      <img src="assets/fix_one_deconv_boat.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_one_deconv_deer.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_one_deconv_prototype_plane.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_one_deconv_bird.png">
+    </div>
+    <div class="explanation">
+      <figcaption>
+        Deconv only in last layer.<br> Other layers use resize-convolution.<br><i>Artifacts of frequency 2.</i>
+      </figcaption>
+    </div>
+  </div>
+  <div class="row">
+    <div class="example">
+      <img src="assets/fix_zero_deconv_boat.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_zero_deconv_deer.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_zero_deconv_prototype_plane.png">
+    </div>
+    <div class="example">
+      <img src="assets/fix_zero_deconv_bird.png">
+    </div>
+    <div class="explanation">
+      <figcaption>
+        All layers use resize-convolution.<br><i>No artifacts.</i>
+      </figcaption>
+    </div>
+  </div>
+</figure>
+</dt-include>
+
+  <p>Thực ra, khác biệt về artefact có thể thấy ngay cả trước khi huấn luyện. Nếu nhìn các ảnh generator tạo ra khi khởi tạo với trọng số ngẫu nhiên, ta đã thấy artefact:</p>
+
+  <dt-include src="assets/deconv_fixes_step0.html"><style>
+
+.fix-step0-examples > .row {
+  display: -ms-flexbox;
+  display: -webkit-flex;
+  display: flex;
+  /*align-items: center;*/
+  margin-bottom: 10px;
+}
+
+.fix-step0-examples > .row > .exampleA {
+  flex-grow: 1;
+  width: 100%;
+  margin-right: 10px;
+}
+.fix-step0-examples > .row > .exampleB {
+  flex-grow: 1;
+  width: 100%;
+  margin-right: 20px;
+}
+
+.fix-step0-examples > .row > .explanation {
+  flex-grow: 2;
+  width: 200%;
+}
+
+.fix-step0-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+</style>
+
+<figure class="fix-step0-examples l-body-outset">
+  <div class="row">
+    <div class="exampleA">
+      <img src="assets/im_rand_two_0.png">
+    </div>
+    <div class="exampleB">
+      <img src="assets/im_rand_two_1.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/im_rand_one_0.png">
+    </div>
+    <div class="exampleB">
+      <img src="assets/im_rand_one_1.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/im_rand_zero_1.png">
+    </div>
+    <div class="exampleB">
+      <img src="assets/im_rand_zero_2.png">
+    </div>
+  </div>
+  <div class="row">
+    <div class="explanation">
+      <figcaption>
+        Deconvolution in last two layers.<br> <i>Artifacts prior to any training.</i>
+      </figcaption>
+    </div>
+    <div class="explanation">
+      <figcaption>
+        Deconvolution only in last layer.<br><i>Artifacts prior to any training.</i>
+      </figcaption>
+    </div>
+    <div class="explanation">
+      <figcaption>
+        All layers use resize-convolution.<br><i>No artifacts before or after training.</i>
+      </figcaption>
+    </div>
+  </div>
+
+</figure>
+</dt-include>
+
+  <p>Điều này gợi ý rằng artefact đến từ chính phương pháp sinh ảnh, chứ không phải từ huấn luyện đối kháng. Nó cũng gợi ý rằng ta có thể học được nhiều điều về thiết kế generator tốt mà không cần vòng phản hồi chậm của việc huấn luyện mô hình.</p>
+
+  <p>Một lý do khác để tin rằng các artefact này không riêng gì GAN là ta thấy chúng trong các loại mô hình khác, và thấy rằng chúng cũng biến mất khi chuyển sang upsampling bằng resize-convolution. Ví dụ, xét style transfer nghệ thuật thời gian thực, nơi một mạng nơ-ron được huấn luyện để trực tiếp sinh ảnh đã chuyển style. Chúng tôi thấy chúng dễ bị artefact bàn cờ, đặc biệt khi hàm chi phí không chống lại artefact một cách tường minh. Tuy nhiên, thay các lớp deconvolution bằng resize-convolution làm artefact biến mất.</p>
+
+  <dt-include src="assets/style_fix.html"><style>
+
+.style-examples > .row {
+  display: -ms-flexbox;
+  display: -webkit-flex;
+  display: flex;
+  /*align-items: center;*/
+  margin-bottom: 10px;
+}
+
+.style-examples > .row > .example {
+  flex-grow: 4;
+  width: 400%;
+  margin-right: 10px;
+}
+
+.style-examples > .row > .explanation {
+  flex-grow: 2;
+  width: 200%;
+  margin-left: 10px;
+}
+
+.style-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+</style>
+
+<figure class="style-examples l-body-outset">
+  <div class="row">
+    <div class="example">
+      <img src="assets/style_artifacts.png">
+    </div>
+    <div class="explanation">
+      <figcaption>
+        Using deconvolution.<br><i>Heavy checkerboard artifacts.</i>
+      </figcaption>
+    </div>
+  </div>
+  <div class="row">
+    <div class="example">
+      <img src="assets/style_clean.png">
+    </div>
+    <div class="explanation">
+      <figcaption>
+        Using resize-convolution.<br><i>No checkerboard artifacts.</i>
+      </figcaption>
+    </div>
+  </div>
+</figure>
+</dt-include>
+
+  <p>Các bài báo sắp tới từ nhóm Google Brain sẽ trình bày lợi ích của kỹ thuật này trong các thí nghiệm kỹ hơn và kết quả state-of-the-art. Chúng tôi chọn trình bày kỹ thuật này riêng vì cảm thấy nó xứng đáng được thảo luận chi tiết hơn, và vì nó cắt ngang nhiều bài báo.</p>
+
+  <hr>
+
+  <h2>Artefact trong gradient</h2>
+
+  <p>Bất cứ khi nào ta tính gradient của một lớp convolution, ta thực hiện deconvolution, tức transposed convolution, ở lượt truyền ngược. Điều này có thể tạo mẫu bàn cờ trong gradient, giống như khi ta dùng deconvolution để sinh ảnh.</p>
+
+  <p>Sự hiện diện của "nhiễu" tần số cao trong gradient của mô hình ảnh đã được biết trong cộng đồng trực quan hóa đặc trưng, nơi nó là một thách thức lớn. Bằng cách nào đó, các phương pháp trực quan hóa đặc trưng phải bù trừ nhiễu này.</p>
+
+  <p>Ví dụ, DeepDream <dt-cite key="mordvintsev2015inceptionism"></dt-cite> dường như gây triệt tiêu giữa các artefact theo nhiều cách, như tối ưu nhiều đặc trưng đồng thời, và tối ưu ở nhiều offset và thang đo. Cụ thể, "jitter" khi tối ưu ở các offset khác nhau triệt tiêu một phần artefact bàn cờ.</p>
+
+  <dt-include src="assets/deepdream_fix.html"><style>
+.deepdream-examples {
+  position: relative;
+}
+
+.deepdream-examples::after {
+  overflow: visible;
+  content: "";
+  background-image: url("assets/pointer.svg");
+  width: 27px;
+  height: 27px;
+  position: absolute;
+  right: -51px;
+  top: 0;
+}
+
+.deepdream-examples .example {
+  position: relative;
+}
+
+.deepdream-examples .original {
+  position: relative;
+  width: 45%;
+}
+
+.deepdream-examples .original:after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 70%;
+  position: absolute;
+  top: -20%;
+  z-index: 1;
+}
+
+.deepdream-examples .example .reticle {
+  position: absolute;
+  pointer-events: none;
+}
+
+.deepdream-examples .example .reticle:after {
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  left: -50%;
+  top: -50%;
+  border-radius: 50%;
+  border: 1px solid white;
+  display: block;
+  content: '';
+  background-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.deepdream-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+.deepdream-examples .closeup img {
+  -webkit-filter: contrast(150%);
+  filter: contrast(150%);
+}
+
+.deepdream-examples .closeup {
+  position: absolute;
+  right: 34%;
+  top: 0;
+  width: 22.5%;
+  border-radius: 50%;
+  margin-bottom: 12px;
+  border: 2px solid white;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.deepdream-examples figcaption {
+  position: absolute;
+  right: 0%;
+  top: 0;
+  width: 30%;
+}
+
+.deepdream-examples .closeup img {
+  position: absolute;
+  width: 800%;
+}
+
+.deepdream-examples .closeup:after {
+  padding-top: 100%;
+  display: block;
+  content: '';
+}
+
+</style>
+
+<div class="deepdream-examples l-body-outset">
+    <figure class="example" style="margin-bottom:20px;">
+      <div class="original" data-focus="10,0.2,0.73">
+        <img src="assets/deepdream_full_gitter_0x0.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/deepdream_full_gitter_0x0.png">
+      </div>
+      <figcaption>
+        DeepDream only applying the neural network to a fixed position.<br>
+        <i>Severe artifacts.</i>
+      </figcaption>
+    </figure>
+    <figure class="example" style="margin-top:20px;">
+      <div class="original" data-focus="10,0.035,0.74">
+        <img src="assets/deepdream_full_gitter_8x8.png">
+        <div class="reticle"></div>
+      </div>
+      <div class="closeup">
+        <img src="assets/deepdream_full_gitter_8x8.png">
+      </div>
+      <figcaption>
+        DeepDream applying the network to a different position each step.<br>
+        <i>Reduced artifacts.</i>
+      </figcaption>
+    </figure>
+</div>
+
+<script>(function() {
+
+var html = d3.select(".deepdream-examples");
+var original = html.selectAll(".example .original");
+html
+    .on("mouseleave", () => {
+      console.log("out")
+      original.each(resetReticle);
+    });
+
+original
+    .datum(function() {
+      var focus = this.getAttribute("data-focus").split(",")
+      return {
+        zoom: focus[0],
+        x: focus[1],
+        y: focus[2]
+      };
+    })
+    .on("mouseleave", resetReticle)
+    .on("mousemove", updateReticle)
+    .each(resetReticle);
+
+function updateReticle(d) {
+
+  original.each(resetReticle);
+  var x = d3.event.offsetX / this.getBoundingClientRect().width;
+  var y = d3.event.offsetY / this.getBoundingClientRect().height;
+  setPosition(this, x, y, d.zoom, 100);
+}
+
+function resetReticle(d) {
+  setPosition(this, d.x, d.y, d.zoom, 300);
+}
+
+function setPosition(element, x, y, zoom, duration) {
+  var marginX = 1 / zoom / 4;
+  var marginY = 1 / zoom / 2;
+  x = Math.min(Math.max(marginX, x), 1 - marginX)
+  y = Math.min(Math.max(marginY, y), 1 - marginY)
+  var parent = d3.select(element.parentElement);
+  var reticle = parent.select(".reticle");
+  var closeup = parent.select(".closeup img");
+
+  reticle
+      .style("width", 50 / zoom + "%")
+      .style("height", 100 / zoom + "%")
+      .transition()
+      .ease(d3.ease("cubic-out"))
+      .duration(duration)
+      .styleTween("left", function (d, i, a) {
+        var from = this.style.left,
+            to = x * 100 + "%";
+        return d3.interpolateString(from, to);
+      })
+      .styleTween("top", function (d, i, a) {
+        var from = this.style.top,
+            to = y * 100 + "%";
+        return d3.interpolateString(from, to);
+      })
+
+  closeup
+      .style("width", zoom * 200 + "%")
+      .style("height", zoom * 100 + "%")
+      .transition()
+      .ease(d3.ease("cubic-out"))
+      .duration(duration)
+      .styleTween("left", function (d, i, a) {
+        var from = this.style.left,
+            to = -x * 200 * zoom + 50 + "%";
+        return d3.interpolateString(from, to);
+      })
+      .styleTween("top", function (d, i, a) {
+        var from = this.style.top,
+            to = -y * 100 * zoom + 50 + "%";
+        return d3.interpolateString(from, to);
+      })
+}
+
+
+})();</script>
+</dt-include>
+
+  <p>Một số artefact là mẫu bàn cờ tiêu chuẩn của ta, nhưng số khác là mẫu tần số cao ít có tổ chức hơn. Chúng tôi tin rằng chúng do max pooling gây ra. Max pooling từng được liên hệ với artefact tần số cao trong <dt-cite key="henaff2015geodesics"></dt-cite>.</p>
+
+  <p>Các công trình gần đây hơn trong trực quan hóa đặc trưng, chẳng hạn <dt-cite key="mordvintsev2016deepdreaming"></dt-cite>, đã nhận ra rõ ràng và bù trừ các thành phần gradient tần số cao này. Ta có thể tự hỏi liệu kiến trúc mạng nơ-ron tốt hơn có làm các nỗ lực đó trở nên không cần thiết hay không.</p>
+
+  <p>Các artefact gradient này có ảnh hưởng đến GAN không? Nếu artefact gradient có thể ảnh hưởng tới một ảnh đang được tối ưu dựa trên gradient của mạng nơ-ron trong trực quan hóa đặc trưng, ta cũng có thể kỳ vọng nó ảnh hưởng tới họ ảnh được generator tham số hóa khi chúng được discriminator tối ưu trong GAN.</p>
+
+  <p>Chúng tôi thấy điều này thật sự xảy ra trong một số trường hợp. Khi generator không thiên về cũng không chống lại mẫu bàn cờ, strided convolution trong discriminator có thể gây ra chúng.</p>
+
+  <dt-include src="assets/discrim_fixes.html"><style>
+
+.discrim-examples > .row {
+  display: -ms-flexbox;
+  display: -webkit-flex;
+  display: flex;
+  /*align-items: center;*/
+  margin-bottom: 10px;
+}
+
+.discrim-examples > .row > .exampleA {
+  flex-grow: 1;
+  width: 100%;
+  margin-right: 10px;
+}
+.discrim-examples > .row > .exampleB {
+  flex-grow: 1;
+  width: 100%;
+  margin-right: 20px;
+}
+
+.discrim-examples > .row > .explanationA {
+  flex-grow: 3;
+  width: 300%;
+  padding-right: 20px;
+}
+
+.discrim-examples > .row > .explanationB {
+  flex-grow: 3;
+  width: 300%;
+  padding-right: 10px;
+}
+
+.discrim-examples img {
+  display: block;
+  width: 100%;
+  -ms-interpolation-mode: nearest-neighbor;
+  image-rendering: optimizeSpeed;
+  image-rendering: pixelated;
+}
+
+</style>
+
+<figure class="discrim-examples l-body-outset">
+  <div class="row">
+    <div class="exampleA">
+      <img src="assets/discrim_stride2_0.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/discrim_stride2_1.png">
+    </div>
+    <div class="exampleB">
+      <img src="assets/discrim_stride2_2.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/discrim_stride1_1.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/discrim_stride1_2.png">
+    </div>
+    <div class="exampleA">
+      <img src="assets/discrim_stride1_0.png">
+    </div>
+  </div>
+  <div class="row">
+    <div class="explanationA">
+      <figcaption>
+        Discriminator has stride 2 convolution in first layer.<br> <i>Strong frequency 2 artifacts.</i>
+      </figcaption>
+    </div>
+    <div class="explanationB">
+      <figcaption>
+        Discriminator has regular convolution in first layer.<br> <i>Very mild artifacts.</i>
+      </figcaption>
+    </div>
+
+  </div>
+
+</figure>
+</dt-include>
+
+  <p>Chưa rõ các hệ quả rộng hơn của artefact gradient là gì. Một cách nghĩ về chúng là một số neuron sẽ nhận gradient lớn gấp nhiều lần các lân cận của chúng, gần như tùy tiện. Tương đương, mạng sẽ quan tâm tới một số pixel trong đầu vào nhiều hơn hẳn các pixel khác mà không có lý do tốt. Cả hai điều đó đều không lý tưởng.</p>
+
+  <p>Có thể việc một số pixel ảnh hưởng tới đầu ra mạng nhiều hơn các pixel khác sẽ khuếch đại các phản ví dụ đối kháng. Vì đạo hàm tập trung vào một số ít pixel, nhiễu nhỏ trên các pixel đó có thể có tác động quá mức. Chúng tôi chưa khảo sát điều này.</p>
+
+  <hr>
+
+  <h2>Kết luận</h2>
+
+  <p>Cách tiếp cận tiêu chuẩn để tạo ảnh bằng deconvolution, dù có nhiều thành công, có một số vấn đề rất đơn giản về mặt khái niệm dẫn tới artefact trong ảnh sinh ra. Dùng một lựa chọn thay thế tự nhiên không có các vấn đề này làm artefact biến mất. Các lập luận tương tự gợi ý rằng các lớp strided convolution tiêu chuẩn cũng có thể có vấn đề.</p>
+
+  <p>Đây có vẻ là một cơ hội thú vị đối với chúng tôi. Nó gợi ý rằng vẫn còn những thành quả dễ hái trong việc suy nghĩ cẩn thận về kiến trúc mạng nơ-ron, ngay cả với những kiến trúc mà ta tưởng đã có lời giải hoạt động sạch sẽ.</p>
+
+  <p>Trong lúc đó, chúng tôi đã cung cấp một lời giải dễ dùng giúp cải thiện chất lượng của nhiều cách sinh ảnh bằng mạng nơ-ron. Chúng tôi mong chờ xem mọi người sẽ làm gì với nó, và liệu nó có giúp trong các miền như âm thanh, nơi artefact tần số cao đặc biệt gây vấn đề hay không.</p>
+</dt-article>
+
+<dt-appendix class="centered">
+  <h3>Lời cảm ơn</h3>
+
+  <p>Chúng tôi rất biết ơn Shan Carter vì các cải tiến tuyệt vời cho sơ đồ tương tác đầu tiên, lời khuyên về thiết kế và gu biên tập. Chúng tôi cũng rất biết ơn David Dohan vì đã cung cấp một ví dụ về strided convolution trong discriminator gây artefact, và Mike Tyka, người đầu tiên chỉ ra cho chúng tôi mối liên hệ giữa jitter và artefact trong DeepDream.</p>
+
+  <p>Cũng xin cảm ơn Luke Vilnis, Jon Shlens, Luke Metz, Alex Mordvintsev và Ben Poole vì phản hồi và sự khích lệ.</p>
+
+  <p>Công việc này được thực hiện nhờ sự hỗ trợ của nhóm <a href="https://research.google.com/teams/brain/">Google Brain</a>. Công việc của Augustus Odena được thực hiện như một phần của <a href="https://research.google.com/teams/brain/residency/">Google Brain Residency Program</a>. Vincent Dumoulin thực hiện công việc này khi đang thăm Brain Team với vai trò thực tập sinh.</p>
+
+  <h3>Đóng góp của tác giả</h3>
+
+  <p>Augustus và Chris nhận ra mối liên hệ giữa deconvolution và artefact. Augustus chạy các thí nghiệm GAN. Vincent chạy các thí nghiệm style transfer nghệ thuật. Chris chạy các thí nghiệm DeepDream, tạo các trực quan hóa và viết phần lớn bài viết.</p>
+</dt-appendix>
+
+<script type="text/bibliography">
+@article{dong2014image,
+  title={Image super-resolution using deep convolutional networks},
+  author={Dong, Chao and Loy, Chen Change and He, Kaiming and Tang, Xiaoou},
+  journal={arXiv preprint arXiv:1501.00092},
+  year={2014},
+  url={https://arxiv.org/pdf/1501.00092.pdf}
+}
+
+@article{dumoulin2016adversarially,
+  title={Adversarially Learned Inference},
+  author={Dumoulin, Vincent and Belghazi, Ishmael and Poole, Ben and Lamb, Alex and Arjovsky, Martin and Mastropietro, Olivier and Courville, Aaron},
+  journal={arXiv preprint arXiv:1606.00704},
+  year={2016},
+  url={https://arxiv.org/pdf/1606.00704.pdf}
+}
+
+@article{dumoulin2016guide,
+  title={A guide to convolution arithmetic for deep learning},
+  author={Dumoulin, Vincent and Visin, Francesco},
+  journal={arXiv preprint arXiv:1603.07285},
+  year={2016},
+  url={https://arxiv.org/pdf/1603.07285.pdf}
+}
+
+@article{gauthier2014conditional,
+  title={Conditional generative adversarial nets for convolutional face generation},
+  author={Gauthier, Jon},
+  journal={Class Project for Stanford CS231N: Convolutional Neural Networks for Visual Recognition, Winter semester},
+  volume={2014},
+  year={2014},
+  url={http://www.foldl.me/uploads/papers/tr-cgans.pdf}
+}
+
+@article{henaff2015geodesics,
+  title={Geodesics of learned representations},
+  author={H{\'e}naff, Olivier J and Simoncelli, Eero P},
+  journal={arXiv preprint arXiv:1511.06394},
+  year={2015},
+  url={https://arxiv.org/pdf/1511.06394.pdf}
+}
+
+@article{johnson2016perceptual,
+  title={Perceptual losses for real-time style transfer and super-resolution},
+  author={Johnson, Justin and Alahi, Alexandre and Fei-Fei, Li},
+  journal={arXiv preprint arXiv:1603.08155},
+  year={2016},
+  url={https://arxiv.org/pdf/1603.08155.pdf}
+}
+
+@article{donahue2016adversarial,
+  title={Adversarial Feature Learning},
+  author={Donahue, Jeff and Kr{\"a}henb{\"u}hl, Philipp and Darrell, Trevor},
+  journal={arXiv preprint arXiv:1605.09782},
+  year={2016},
+  url={https://arxiv.org/pdf/1605.09782.pdf}
+}
+
+@article{mordvintsev2015inceptionism,
+  title={Inceptionism: Going deeper into neural networks},
+  author={Mordvintsev, Alexander and Olah, Christopher and Tyka, Mike},
+  journal={Google Research Blog. Retrieved June},
+  volume={20},
+  year={2015},
+  url={https://research.googleblog.com/2015/06/inceptionism-going-deeper-into-neural.html}
+}
+
+@misc{mordvintsev2016deepdreaming,
+  title={DeepDreaming with TensorFlow},
+  author={Mordvintsev, Alexander},
+  year={2016},
+  url={https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/tutorials/deepdream/deepdream.ipynb},
+}
+
+@article{radford2015unsupervised,
+  title={Unsupervised representation learning with deep convolutional generative adversarial networks},
+  author={Radford, Alec and Metz, Luke and Chintala, Soumith},
+  journal={arXiv preprint arXiv:1511.06434},
+  year={2015},
+  url={https://arxiv.org/pdf/1511.06434.pdf}
+}
+
+@inproceedings{salimans2016improved,
+  title={Improved techniques for training gans},
+  author={Salimans, Tim and Goodfellow, Ian and Zaremba, Wojciech and Cheung, Vicki and Radford, Alec and Chen, Xi},
+  booktitle={Advances in Neural Information Processing Systems},
+  pages={2226--2234},
+  year={2016},
+  url={https://arxiv.org/pdf/1606.03498.pdf}
+}
+
+@article{shi2016deconvolution,
+  title={Is the deconvolution layer the same as a convolutional layer?},
+  author={Shi, Wenzhe and Caballero, Jose and Theis, Lucas and Huszar, Ferenc and Aitken, Andrew and Ledig, Christian and Wang, Zehan},
+  journal={arXiv preprint arXiv:1609.07009},
+  year={2016},
+  url={https://arxiv.org/pdf/1609.07009.pdf}
+}
+
+@inproceedings{shi2016real,
+  title={Real-time single image and video super-resolution using an efficient sub-pixel convolutional neural network},
+  author={Shi, Wenzhe and Caballero, Jose and Husz{\'a}r, Ferenc and Totz, Johannes and Aitken, Andrew P and Bishop, Rob and Rueckert, Daniel and Wang, Zehan},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  pages={1874--1883},
+  year={2016},
+  url={https://arxiv.org/pdf/1609.05158.pdf},
+  doi={10.1109/cvpr.2016.207}
+}
+</script>
